@@ -614,17 +614,42 @@
 		});
 
 		if (res) {
+<<<<<<< HEAD
 			// Add file to knowledge base using the ID from the response
 			const updatedKnowledge = await addFileToKnowledgeById(localStorage.token, id, res.id).catch((e) => {
+=======
+			// Create a file entry for the processed video
+			const videoFile = new File([res.file.data.content], `${res.filename}.txt`, { type: 'text/plain' });
+			const uploadedFile = await uploadFile(localStorage.token, videoFile).catch((e) => {
+>>>>>>> a08de55cd (Feat: Add YouTube video support to KnowledgeBase with modal dialog for user input.)
 				toast.error(e);
 				return null;
 			});
 
+<<<<<<< HEAD
 			if (updatedKnowledge) {
 				knowledge = updatedKnowledge;
 				toast.success($i18n.t('YouTube video processed successfully.'));
 			} else {
 				toast.error($i18n.t('Failed to add video to knowledge base.'));
+=======
+			if (uploadedFile) {
+				// Add file to knowledge base
+				const updatedKnowledge = await addFileToKnowledgeById(localStorage.token, id, uploadedFile.id).catch((e) => {
+					toast.error(e);
+					return null;
+				});
+
+				if (updatedKnowledge) {
+					knowledge = updatedKnowledge;
+					toast.success($i18n.t('YouTube video processed successfully.'));
+				} else {
+					toast.error($i18n.t('Failed to add video to knowledge base.'));
+					knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
+				}
+			} else {
+				toast.error($i18n.t('Failed to create file entry.'));
+>>>>>>> a08de55cd (Feat: Add YouTube video support to KnowledgeBase with modal dialog for user input.)
 				knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
 			}
 		} else {
@@ -894,7 +919,7 @@
 						}}
 					>
 						<div class="flex flex-col justify-start h-full max-h-full p-2">
-							<div class="flex flex-col w-full h-full max-h-full">
+							<div class=" flex flex-col w-full h-full max-h-full">
 								<div class="flex-shrink-0 mt-1 mb-2 flex items-center">
 									<div class="mr-2">
 										<button
