@@ -1087,18 +1087,23 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
         docs = loader.load()
         content = " ".join([doc.page_content for doc in docs])
         log.debug(f"text_content: {content}")
+        
+        # Get video title from metadata or fallback to URL
+        video_title = docs[0].metadata.get("title", form_data.url) if docs else form_data.url
+        
         save_docs_to_vector_db(docs, collection_name, overwrite=True)
 
         return {
             "status": True,
             "collection_name": collection_name,
-            "filename": form_data.url,
+            "filename": video_title,
             "file": {
                 "data": {
                     "content": content,
                 },
                 "meta": {
-                    "name": form_data.url,
+                    "name": video_title,
+                    "source_url": form_data.url,  # Keep original URL as source
                 },
             },
         }
