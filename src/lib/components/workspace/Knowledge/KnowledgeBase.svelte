@@ -24,7 +24,7 @@
 
 	import { transcribeAudio } from '$lib/apis/audio';
 	import { blobToFile } from '$lib/utils';
-	import { processFile } from '$lib/apis/retrieval';
+	import { processFile, processYoutubeVideo } from '$lib/apis/retrieval';
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Files from './KnowledgeBase/Files.svelte';
@@ -32,6 +32,7 @@
 
 	import AddContentMenu from './KnowledgeBase/AddContentMenu.svelte';
 	import AddTextContentModal from './KnowledgeBase/AddTextContentModal.svelte';
+	import AddYoutubeModal from './KnowledgeBase/AddYoutubeModal.svelte';
 
 	import SyncConfirmDialog from '../../common/ConfirmDialog.svelte';
 	import RichTextInput from '$lib/components/common/RichTextInput.svelte';
@@ -64,6 +65,7 @@
 	let showAddTextContentModal = false;
 	let showSyncConfirmModal = false;
 	let showAccessControlModal = false;
+	let showAddYoutubeModal = false;
 
 	let inputFiles = null;
 
@@ -576,6 +578,65 @@
 	}}
 />
 
+<AddYoutubeModal
+	bind:show={showAddYoutubeModal}
+	on:submit={async (e) => {
+		const url = e.detail.url;
+		
+		// Create a temporary file entry
+		const tempItemId = uuidv4();
+		const fileItem = {
+			type: 'youtube',
+			file: '',
+			id: null,
+			url: url,
+			name: url,  // We'll update this with video title later
+			size: 0,
+			status: 'uploading',
+			error: '',
+			itemId: tempItemId
+		};
+		
+		knowledge.files = [...(knowledge.files ?? []), fileItem];
+
+		// Process the YouTube video
+		const res = await processYoutubeVideo(localStorage.token, url).catch((err) => {
+			toast.error(err);
+			return null;
+		});
+
+		if (res) {
+			// Create a file entry for the processed video
+			const videoFile = new File([res.file.data.content], `${res.filename}.txt`, { type: 'text/plain' });
+			const uploadedFile = await uploadFile(localStorage.token, videoFile).catch((e) => {
+				toast.error(e);
+				return null;
+			});
+
+			if (uploadedFile) {
+				// Add file to knowledge base
+				const updatedKnowledge = await addFileToKnowledgeById(localStorage.token, id, uploadedFile.id).catch((e) => {
+					toast.error(e);
+					return null;
+				});
+
+				if (updatedKnowledge) {
+					knowledge = updatedKnowledge;
+					toast.success($i18n.t('YouTube video processed successfully.'));
+				} else {
+					toast.error($i18n.t('Failed to add video to knowledge base.'));
+					knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
+				}
+			} else {
+				toast.error($i18n.t('Failed to create file entry.'));
+				knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
+			}
+		} else {
+			knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
+		}
+	}}
+/>
+
 <input
 	id="files-input"
 	bind:files={inputFiles}
@@ -717,6 +778,8 @@
 														uploadDirectoryHandler();
 													} else if (e.detail.type === 'text') {
 														showAddTextContentModal = true;
+													} else if (e.detail.type === 'youtube') {
+														showAddYoutubeModal = true;
 													} else {
 														document.getElementById('files-input').click();
 													}
