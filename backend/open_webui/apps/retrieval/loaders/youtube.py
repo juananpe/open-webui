@@ -113,6 +113,7 @@ class YoutubeLoader:
             )
 
         try:
+            print(f"[YoutubeLoader] Processing video URL: {self.video_id}")  # Debug log
             transcript_list = YouTubeTranscriptApi.list_transcripts(self.video_id)
         except Exception as e:
             print(e)
@@ -136,5 +137,9 @@ class YoutubeLoader:
         title = self._get_video_title()
         if title:
             self._metadata["title"] = title
+            
+        # Add the original video URL to metadata
+        self._metadata["source_url"] = f"https://www.youtube.com/watch?v={self.video_id}"
+        print(f"[YoutubeLoader] Document metadata: {self._metadata}")  # Debug log
 
         return [Document(page_content=transcript, metadata=self._metadata)]

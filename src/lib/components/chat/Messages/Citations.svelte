@@ -55,12 +55,21 @@
 				const id = metadata?.source ?? 'N/A';
 				let _source = source?.source;
 
-				if (metadata?.name) {
+				// Handle source URL and title
+				if (metadata?.source_url) {
+					_source = { 
+						..._source, 
+						name: metadata.title || metadata.source_url,
+						url: metadata.source_url 
+					};
+				} else if (metadata?.source?.startsWith('http://') || metadata?.source?.startsWith('https://')) {
+					_source = { 
+						..._source, 
+						name: metadata.title || metadata.source,
+						url: metadata.source 
+					};
+				} else if (metadata?.name) {
 					_source = { ..._source, name: metadata.name };
-				}
-
-				if (id.startsWith('http://') || id.startsWith('https://')) {
-					_source = { ..._source, name: id, url: id };
 				}
 
 				const existingSource = acc.find((item) => item.id === id);
