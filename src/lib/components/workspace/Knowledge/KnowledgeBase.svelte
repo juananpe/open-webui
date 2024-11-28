@@ -448,13 +448,7 @@
 
 	const onDragOver = (e) => {
 		e.preventDefault();
-
-		// Check if a file is being draggedOver.
-		if (e.dataTransfer?.types?.includes('Files')) {
-			dragged = true;
-		} else {
-			dragged = false;
-		}
+		dragged = true;
 	};
 
 	const onDragLeave = () => {
@@ -465,17 +459,15 @@
 		e.preventDefault();
 		dragged = false;
 
-		if (e.dataTransfer?.types?.includes('Files')) {
-			if (e.dataTransfer?.files) {
-				const inputFiles = e.dataTransfer?.files;
+		if (e.dataTransfer?.files) {
+			const inputFiles = e.dataTransfer?.files;
 
-				if (inputFiles && inputFiles.length > 0) {
-					for (const file of inputFiles) {
-						await uploadFileHandler(file);
-					}
-				} else {
-					toast.error($i18n.t(`File not found.`));
+			if (inputFiles && inputFiles.length > 0) {
+				for (const file of inputFiles) {
+					await uploadFileHandler(file);
 				}
+			} else {
+				toast.error($i18n.t(`File not found.`));
 			}
 		}
 	};
@@ -615,6 +607,7 @@
 
 		if (res) {
 <<<<<<< HEAD
+<<<<<<< HEAD
 			// Add file to knowledge base using the ID from the response
 			const updatedKnowledge = await addFileToKnowledgeById(localStorage.token, id, res.id).catch((e) => {
 =======
@@ -622,10 +615,15 @@
 			const videoFile = new File([res.file.data.content], `${res.filename}.txt`, { type: 'text/plain' });
 			const uploadedFile = await uploadFile(localStorage.token, videoFile).catch((e) => {
 >>>>>>> a08de55cd (Feat: Add YouTube video support to KnowledgeBase with modal dialog for user input.)
+=======
+			// Add file to knowledge base using the ID from the response
+			const updatedKnowledge = await addFileToKnowledgeById(localStorage.token, id, res.id).catch((e) => {
+>>>>>>> 497bd885a (Enhance YouTube video processing with improved metadata handling and file integration)
 				toast.error(e);
 				return null;
 			});
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 			if (updatedKnowledge) {
 				knowledge = updatedKnowledge;
@@ -650,6 +648,13 @@
 			} else {
 				toast.error($i18n.t('Failed to create file entry.'));
 >>>>>>> a08de55cd (Feat: Add YouTube video support to KnowledgeBase with modal dialog for user input.)
+=======
+			if (updatedKnowledge) {
+				knowledge = updatedKnowledge;
+				toast.success($i18n.t('YouTube video processed successfully.'));
+			} else {
+				toast.error($i18n.t('Failed to add video to knowledge base.'));
+>>>>>>> 497bd885a (Enhance YouTube video processing with improved metadata handling and file integration)
 				knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
 			}
 		} else {
@@ -919,7 +924,7 @@
 						}}
 					>
 						<div class="flex flex-col justify-start h-full max-h-full p-2">
-							<div class=" flex flex-col w-full h-full max-h-full">
+							<div class="flex flex-col w-full h-full max-h-full">
 								<div class="flex-shrink-0 mt-1 mb-2 flex items-center">
 									<div class="mr-2">
 										<button

@@ -130,9 +130,8 @@ class YoutubeLoader:
             youtube_proxies = None
 
         try:
-            transcript_list = YouTubeTranscriptApi.list_transcripts(
-                self.video_id, proxies=youtube_proxies
-            )
+            print(f"[YoutubeLoader] Processing video URL: {self.video_id}")  # Debug log
+            transcript_list = YouTubeTranscriptApi.list_transcripts(self.video_id)
         except Exception as e:
             log.exception("Loading YouTube transcript failed")
             return []
