@@ -868,6 +868,7 @@
 												className="input-prose-sm"
 												bind:value={selectedFile.data.content}
 												placeholder={$i18n.t('Add content here')}
+												preserveBreaks={true}
 											/>
 										{/key}
 									</div>
