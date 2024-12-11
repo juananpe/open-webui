@@ -52,7 +52,7 @@ from open_webui.apps.retrieval.utils import (
     query_doc_with_hybrid_search,
 )
 
-from open_webui.apps.webui.models.files import Files
+from open_webui.apps.webui.models.files import Files, FileForm
 from open_webui.config import (
     BRAVE_SEARCH_API_KEY,
     KAGI_SEARCH_API_KEY,
@@ -806,23 +806,49 @@ def save_docs_to_vector_db(
         raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
 
     texts = [doc.page_content for doc in docs]
-    metadatas = [
-        {
-            **doc.metadata,
-            **(metadata if metadata else {}),
-            "embedding_config": json.dumps(
+    metadatas = []
+
+    for doc in docs:
+        # Preserve the original metadata
+        doc_metadata = doc.metadata.copy()
+
+        # Add any additional metadata
+        if metadata:
+            doc_metadata.update(metadata)
+
+        # Ensure source and source_url are preserved
+        if "source_url" in doc_metadata:
+            doc_metadata["source"] = doc_metadata["source_url"]
+
+        # Add embedding config
+        doc_metadata["embedding_config"] = json.dumps(
+            {
+                "engine": app.state.config.RAG_EMBEDDING_ENGINE,
+                "model": app.state.config.RAG_EMBEDDING_MODEL,
+            }
+        )
+
+        # Convert datetime objects to strings
+        for key, value in doc_metadata.items():
+            if isinstance(value, datetime):
+                doc_metadata[key] = str(value)
+
+        # Debug log for final metadata
+        log.info(f"Final document metadata for ChromaDB: {doc_metadata}")
+        metadatas.append(doc_metadata)
+
+    # Integration: Ensure compatibility with the new code structure
+    for metadata in metadatas:
+        # If embedding_config does not exist, add it explicitly (redundancy check)
+        if "embedding_config" not in metadata:
+            metadata["embedding_config"] = json.dumps(
                 {
                     "engine": app.state.config.RAG_EMBEDDING_ENGINE,
                     "model": app.state.config.RAG_EMBEDDING_MODEL,
                 }
-            ),
-        }
-        for doc in docs
-    ]
+            )
 
-    # ChromaDB does not like datetime formats
-    # for meta-data so convert them to string.
-    for metadata in metadatas:
+        # Ensure all datetime formats are converted, as ChromaDB does not support them
         for key, value in metadata.items():
             if isinstance(value, datetime):
                 metadata[key] = str(value)
@@ -1093,6 +1119,8 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
         if not collection_name:
             collection_name = calculate_sha256_string(form_data.url)[:63]
 
+        log.info(f"Processing YouTube video: {form_data.url}")  # Debug log
+        
         loader = YoutubeLoader(
             form_data.url,
             language=app.state.config.YOUTUBE_LOADER_LANGUAGE,
@@ -1100,22 +1128,71 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
         )
 
         docs = loader.load()
+        if not docs:
+            raise ValueError("No transcript found for this video")
+            
         content = " ".join([doc.page_content for doc in docs])
         log.debug(f"text_content: {content}")
+        
+        # Get video title from metadata or fallback to URL
+        video_title = docs[0].metadata.get("title", form_data.url)
+        
+        # Create a unique file ID for this video
+        file_id = str(uuid.uuid4())
+        
+        # Create a file record
+        file_item = Files.insert_new_file(
+            user.id if user else None,
+            FileForm(
+                **{
+                    "id": file_id,
+                    "filename": video_title,
+                    "path": form_data.url,  # Use the video URL as the path
+                    "meta": {
+                        "name": video_title,
+                        "content_type": "text/plain",
+                        "size": len(content),
+                        "source": form_data.url,
+                        "source_url": form_data.url,
+                        "type": "youtube"
+                    },
+                    "data": {
+                        "content": content
+                    }
+                }
+            ),
+        )
+        
+        # Add file-specific metadata
+        file_metadata = {
+            "source": form_data.url,
+            "source_url": form_data.url,
+            "title": video_title,
+            "type": "youtube",
+            "name": video_title,
+            "file_id": file_id,
+            "created_by": user.id if user else None
+        }
+        
+        # Update all docs with the file metadata
+        for doc in docs:
+            doc.metadata.update(file_metadata)
+            log.info(f"Document metadata before saving: {doc.metadata}")  # Debug log
+        
+        # Save to ChromaDB
         save_docs_to_vector_db(docs, collection_name, overwrite=True)
 
         return {
             "status": True,
             "collection_name": collection_name,
-            "filename": form_data.url,
+            "id": file_id,  # Return the file ID directly
+            "filename": video_title,
             "file": {
                 "data": {
-                    "content": content,
+                    "content": content
                 },
-                "meta": {
-                    "name": form_data.url,
-                },
-            },
+                "meta": file_metadata
+            }
         }
     except Exception as e:
         log.exception(e)
