@@ -69,6 +69,42 @@ class YoutubeLoader:
         else:
             self.language = language
 
+    def _get_video_title(self) -> Optional[str]:
+        """Get the video title using YouTube API or page scraping."""
+        try:
+            import requests
+            import json
+
+            # First try using YouTube Data API v3 if available
+            try:
+                from open_webui.config import YOUTUBE_API_KEY
+                if YOUTUBE_API_KEY:
+                    url = f"https://www.googleapis.com/youtube/v3/videos?id={self.video_id}&key={YOUTUBE_API_KEY}&part=snippet"
+                    response = requests.get(url)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("items"):
+                            return data["items"][0]["snippet"]["title"]
+            except ImportError:
+                pass
+
+            # Fallback to scraping the title from YouTube page
+            url = f"https://www.youtube.com/watch?v={self.video_id}"
+            response = requests.get(url)
+            if response.status_code == 200:
+                import re
+                title_match = re.search(r'<title>(.+?)</title>', response.text)
+                if title_match:
+                    title = title_match.group(1)
+                    # Remove " - YouTube" from the end if present
+                    if title.endswith(" - YouTube"):
+                        title = title[:-10]
+                    return title
+            return None
+        except Exception as e:
+            print(f"Error getting video title: {e}")
+            return None
+
     def load(self) -> List[Document]:
         """Load YouTube transcripts into `Document` objects."""
         try:
@@ -114,4 +150,14 @@ class YoutubeLoader:
                 transcript_pieces,
             )
         )
+
+        # Get video title and add it to metadata
+        title = self._get_video_title()
+        if title:
+            self._metadata["title"] = title
+            
+        # Add the original video URL to metadata
+        self._metadata["source_url"] = f"https://www.youtube.com/watch?v={self.video_id}"
+        print(f"[YoutubeLoader] Document metadata: {self._metadata}")  # Debug log
+
         return [Document(page_content=transcript, metadata=self._metadata)]

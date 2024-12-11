@@ -807,3 +807,20 @@ async def get_api_key(user=Depends(get_current_user)):
         }
     else:
         raise HTTPException(404, detail=ERROR_MESSAGES.API_KEY_NOT_FOUND)
+
+
+@router.get("/complete")
+async def complete_auth(token: str):
+    # Return a simple HTML page that stores the token in localStorage and redirects to the main app
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+        <head>
+            <script>
+                localStorage.setItem('token', '{token}');
+                window.location.href = '/';
+            </script>
+        </head>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
