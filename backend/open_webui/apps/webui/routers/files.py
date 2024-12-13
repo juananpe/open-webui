@@ -230,20 +230,35 @@ async def get_file_content_by_id(id: str, user=Depends(get_verified_user)):
                 # URL encode the filename
                 filename = file.meta.get("name", file.filename)
                 encoded_filename = quote(filename)
-                if any(c in filename for c in ' ,;'):
-                    encoded_filename = f'"{encoded_filename}"'
-
+                
+                # Add both standard filename and RFC 5987 encoded filename
+                # Some browsers will use one or the other
                 headers = {
                     'Content-Type': content_type,
-                    'Content-Disposition': f"attachment; filename*=UTF-8''{encoded_filename}"
+                    'Content-Disposition': f'attachment; filename="{encoded_filename}"; filename*=UTF-8\'\'{encoded_filename}'
                 }
 
                 return StreamingResponse(iterfile(), headers=headers)
             else:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=ERROR_MESSAGES.NOT_FOUND,
-                )
+                # File path doesn't exist, return the content as .txt if possible
+                if file.data and "content" in file.data:
+                    def generator():
+                        yield file.data["content"].encode("utf-8")
+
+                    filename = f"{file.filename}.txt" if not file.filename.endswith('.txt') else file.filename
+                    encoded_filename = quote(filename)
+                    
+                    headers = {
+                        'Content-Type': 'text/plain',
+                        'Content-Disposition': f'attachment; filename="{encoded_filename}"; filename*=UTF-8\'\'{encoded_filename}'
+                    }
+                    
+                    return StreamingResponse(generator(), headers=headers)
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=ERROR_MESSAGES.NOT_FOUND,
+                    )
         except Exception as e:
             log.exception(e)
             log.error(f"Error getting file content")
