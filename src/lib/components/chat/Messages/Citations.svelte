@@ -41,6 +41,22 @@
 		return distances.every((d) => d !== undefined && d >= -1 && d <= 1);
 	}
 
+	function formatTime(seconds: number): string {
+		const minutes = Math.floor(seconds / 60);
+		const remainingSeconds = Math.floor(seconds % 60);
+		return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+	}
+
+	function handleCitationClick(citation: any, e: MouseEvent) {
+		if (citation.source?.url?.includes('youtube.com')) {
+			e.preventDefault();
+			window.open(citation.source.url, '_blank');
+			return;
+		}
+		showCitationModal = true;
+		selectedCitation = citation;
+	}
+
 	$: {
 		citations = sources.reduce((acc, source) => {
 			if (Object.keys(source).length === 0) {
@@ -57,10 +73,18 @@
 
 				// Handle source URL and title
 				if (metadata?.source_url) {
+					let url = metadata.source_url;
+					let name = metadata.title || metadata.source_url;
+					
+					// If it's a YouTube video with a timestamp
+					if (metadata.type === 'youtube' && metadata.start_time) {
+						name = `${name} (${formatTime(metadata.start_time)})`;
+					}
+					
 					_source = { 
 						..._source, 
-						name: metadata.title || metadata.source_url,
-						url: metadata.source_url 
+						name,
+						url
 					};
 				} else if (id.startsWith('http://') || id.startsWith('https://')) {
 					_source = { 
@@ -111,10 +135,7 @@
 					<button
 						id={`source-${citation.source.name}`}
 						class="no-toggle outline-none flex dark:text-gray-300 p-1 bg-white dark:bg-gray-900 rounded-xl max-w-96"
-						on:click={() => {
-							showCitationModal = true;
-							selectedCitation = citation;
-						}}
+						on:click={(e) => handleCitationClick(citation, e)}
 					>
 						{#if citations.every((c) => c.distances !== undefined)}
 							<div class="bg-gray-50 dark:bg-gray-800 rounded-full size-4">
@@ -141,10 +162,7 @@
 								{#each citations.slice(0, 2) as citation, idx}
 									<button
 										class="no-toggle outline-none flex dark:text-gray-300 p-1 bg-gray-50 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-850 transition rounded-xl max-w-96"
-										on:click={() => {
-											showCitationModal = true;
-											selectedCitation = citation;
-										}}
+										on:click={(e) => handleCitationClick(citation, e)}
 										on:pointerup={(e) => {
 											e.stopPropagation();
 										}}
@@ -180,10 +198,7 @@
 						{#each citations as citation, idx}
 							<button
 								class="no-toggle outline-none flex dark:text-gray-300 p-1 bg-gray-50 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-850 transition rounded-xl max-w-96"
-								on:click={() => {
-									showCitationModal = true;
-									selectedCitation = citation;
-								}}
+								on:click={(e) => handleCitationClick(citation, e)}
 							>
 								{#if citations.every((c) => c.distances !== undefined)}
 									<div class="bg-gray-50 dark:bg-gray-800 rounded-full size-4">
