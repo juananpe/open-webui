@@ -128,6 +128,16 @@ from open_webui.utils.auth import get_admin_user, get_verified_user
 from langchain.text_splitter import RecursiveCharacterTextSplitter, TokenTextSplitter
 from langchain_core.documents import Document
 
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+
+def add_timestamp_to_youtube_url(url: str, timestamp: int) -> str:
+    parsed = urlparse(url)
+    query_dict = parse_qs(parsed.query)
+    query_dict['t'] = [str(timestamp)]
+    new_query = urlencode(query_dict, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
+
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["RAG"])
@@ -809,13 +819,13 @@ def save_docs_to_vector_db(
 
     if split:
         # Check if this is a YouTube document by looking at the first doc's metadata
-        is_youtube = (len(docs) == 1 and 
-                     docs[0].metadata.get("type") == "youtube" and 
-                     docs[0].metadata.get("timestamp_map"))
-        
+        is_youtube = (len(docs) == 1 and
+                      docs[0].metadata.get("type") == "youtube")
+
         # Store timestamp_map before splitting if it's a YouTube document
-        original_timestamp_map = docs[0].metadata.get("timestamp_map") if is_youtube else None
-        
+        original_timestamp_map = docs[0].metadata.get(
+            "timestamp_map") if is_youtube else None
+
         # Split documents using existing splitter logic
         if app.state.config.TEXT_SPLITTER in ["", "character"]:
             text_splitter = RecursiveCharacterTextSplitter(
@@ -840,18 +850,18 @@ def save_docs_to_vector_db(
             for doc in docs:
                 start_index = doc.metadata.get("start_index", 0)
                 end_index = start_index + len(doc.page_content)
-                
+
                 start_time, end_time = interpolate_timestamp(
-                    start_index, 
-                    end_index, 
+                    start_index,
+                    end_index,
                     original_timestamp_map
                 )
-                
+
                 doc.metadata.update({
                     "start_time": start_time,
-                    "source_url": f"{doc.metadata['source_url']}?t={int(start_time)}"
+                    "source_url": add_timestamp_to_youtube_url(doc.metadata['source_url'], int(start_time))
                 })
-                
+
                 # Remove the timestamp_map from individual chunks
                 doc.metadata.pop("timestamp_map", None)
 
@@ -1208,7 +1218,7 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
                         "content_type": "text/plain",
                         "size": len(content),
                         "source": form_data.url,
-                        "source_url": form_data.url,
+                        "source_url": add_timestamp_to_youtube_url(form_data.url, 0),
                         "type": "youtube"
                     },
                     "data": {
@@ -1221,7 +1231,7 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
         # Add file-specific metadata
         file_metadata = {
             "source": form_data.url,
-            "source_url": form_data.url,
+            "source_url": add_timestamp_to_youtube_url(form_data.url, 0),
             "title": video_title,
             "type": "youtube",
             "name": video_title,
