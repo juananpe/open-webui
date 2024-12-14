@@ -144,20 +144,39 @@ class YoutubeLoader:
 
         transcript_pieces: List[Dict[str, Any]] = transcript.fetch()
 
-        transcript = " ".join(
-            map(
-                lambda transcript_piece: transcript_piece["text"].strip(" "),
-                transcript_pieces,
-            )
-        )
-
-        # Get video title and add it to metadata
+        # Get video title and add it to base metadata
         title = self._get_video_title()
         if title:
             self._metadata["title"] = title
-            
-        # Add the original video URL to metadata
-        self._metadata["source_url"] = f"https://www.youtube.com/watch?v={self.video_id}"
-        print(f"[YoutubeLoader] Document metadata: {self._metadata}")  # Debug log
 
-        return [Document(page_content=transcript, metadata=self._metadata)]
+        # Add the base video URL to metadata
+        base_url = f"https://www.youtube.com/watch?v={self.video_id}"
+        self._metadata["source_url"] = base_url
+
+        # Combine pieces into a single text while tracking timestamp positions
+        full_text = ""
+        timestamp_map = []
+        
+        for piece in transcript_pieces:
+            start_char = len(full_text)
+            text = piece["text"].strip()
+            full_text += text + " "
+            end_char = len(full_text)
+            
+            timestamp_map.append({
+                "start": start_char,
+                "end": end_char,
+                "time": piece["start"],
+                "duration": piece["duration"]
+            })
+
+        # Create a single document that will be split by Langchain's text splitter
+        doc = Document(
+            page_content=full_text.strip(),
+            metadata={
+                **self._metadata,
+                "timestamp_map": timestamp_map  # Store timestamp mapping in metadata
+            }
+        )
+
+        return [doc]

@@ -9,7 +9,7 @@ import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Optional, Sequence, Union
+from typing import Iterator, Optional, Sequence, Union, List, Dict, Any, Tuple
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -753,6 +753,34 @@ def _get_docs_info(docs: list[Document]) -> str:
     return ", ".join(docs_info)
 
 
+def interpolate_timestamp(chunk_start: int, chunk_end: int, timestamp_map: List[dict]) -> Tuple[float, float]:
+    """
+    Find the appropriate timestamp for a chunk based on its character position
+    Returns (start_time, end_time) as floats in seconds
+    """
+    # Find the timestamp entry that contains the start of our chunk
+    for entry in timestamp_map:
+        if entry["start"] <= chunk_start <= entry["end"]:
+            start_time = entry["time"]
+            break
+    else:
+        # If not found, use the closest previous timestamp
+        start_time = min(
+            [e["time"] for e in timestamp_map if e["start"] <= chunk_start], default=0)
+
+    # Find the timestamp entry that contains the end of our chunk
+    for entry in reversed(timestamp_map):
+        if entry["start"] <= chunk_end <= entry["end"]:
+            end_time = entry["time"] + entry["duration"]
+            break
+    else:
+        # If not found, use the closest next timestamp
+        end_time = max([e["time"] + e["duration"]
+                       for e in timestamp_map if e["end"] >= chunk_end], default=start_time)
+
+    return start_time, end_time
+
+
 def save_docs_to_vector_db(
     docs,
     collection_name,
@@ -775,10 +803,20 @@ def save_docs_to_vector_db(
         if result is not None:
             existing_doc_ids = result.ids[0]
             if existing_doc_ids:
-                log.info(f"Document with hash {metadata['hash']} already exists")
+                log.info(
+                    f"Document with hash {metadata['hash']} already exists")
                 raise ValueError(ERROR_MESSAGES.DUPLICATE_CONTENT)
 
     if split:
+        # Check if this is a YouTube document by looking at the first doc's metadata
+        is_youtube = (len(docs) == 1 and 
+                     docs[0].metadata.get("type") == "youtube" and 
+                     docs[0].metadata.get("timestamp_map"))
+        
+        # Store timestamp_map before splitting if it's a YouTube document
+        original_timestamp_map = docs[0].metadata.get("timestamp_map") if is_youtube else None
+        
+        # Split documents using existing splitter logic
         if app.state.config.TEXT_SPLITTER in ["", "character"]:
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=app.state.config.CHUNK_SIZE,
@@ -786,11 +824,6 @@ def save_docs_to_vector_db(
                 add_start_index=True,
             )
         elif app.state.config.TEXT_SPLITTER == "token":
-            log.info(
-                f"Using token text splitter: {app.state.config.TIKTOKEN_ENCODING_NAME}"
-            )
-
-            tiktoken.get_encoding(str(app.state.config.TIKTOKEN_ENCODING_NAME))
             text_splitter = TokenTextSplitter(
                 encoding_name=str(app.state.config.TIKTOKEN_ENCODING_NAME),
                 chunk_size=app.state.config.CHUNK_SIZE,
@@ -801,6 +834,26 @@ def save_docs_to_vector_db(
             raise ValueError(ERROR_MESSAGES.DEFAULT("Invalid text splitter"))
 
         docs = text_splitter.split_documents(docs)
+
+        # Only process timestamps for YouTube documents
+        if is_youtube and original_timestamp_map:
+            for doc in docs:
+                start_index = doc.metadata.get("start_index", 0)
+                end_index = start_index + len(doc.page_content)
+                
+                start_time, end_time = interpolate_timestamp(
+                    start_index, 
+                    end_index, 
+                    original_timestamp_map
+                )
+                
+                doc.metadata.update({
+                    "start_time": start_time,
+                    "timestamp_url": f"{doc.metadata['source_url']}?t={int(start_time)}"
+                })
+                
+                # Remove the timestamp_map from individual chunks
+                doc.metadata.pop("timestamp_map", None)
 
     if len(docs) == 0:
         raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
@@ -858,7 +911,8 @@ def save_docs_to_vector_db(
             log.info(f"collection {collection_name} already exists")
 
             if overwrite:
-                VECTOR_DB_CLIENT.delete_collection(collection_name=collection_name)
+                VECTOR_DB_CLIENT.delete_collection(
+                    collection_name=collection_name)
                 log.info(f"deleting existing collection {collection_name}")
             elif add is False:
                 log.info(
@@ -932,7 +986,8 @@ def process_file(
             # Update the content in the file
             # Usage: /files/{file_id}/data/content/update
 
-            VECTOR_DB_CLIENT.delete_collection(collection_name=f"file-{file.id}")
+            VECTOR_DB_CLIENT.delete_collection(
+                collection_name=f"file-{file.id}")
 
             docs = [
                 Document(
@@ -1120,7 +1175,7 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
             collection_name = calculate_sha256_string(form_data.url)[:63]
 
         log.info(f"Processing YouTube video: {form_data.url}")  # Debug log
-        
+
         loader = YoutubeLoader(
             form_data.url,
             language=app.state.config.YOUTUBE_LOADER_LANGUAGE,
@@ -1130,16 +1185,16 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
         docs = loader.load()
         if not docs:
             raise ValueError("No transcript found for this video")
-            
+
         content = " ".join([doc.page_content for doc in docs])
         log.debug(f"text_content: {content}")
-        
+
         # Get video title from metadata or fallback to URL
         video_title = docs[0].metadata.get("title", form_data.url)
-        
+
         # Create a unique file ID for this video
         file_id = str(uuid.uuid4())
-        
+
         # Create a file record
         file_item = Files.insert_new_file(
             user.id if user else None,
@@ -1162,7 +1217,7 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
                 }
             ),
         )
-        
+
         # Add file-specific metadata
         file_metadata = {
             "source": form_data.url,
@@ -1173,12 +1228,13 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
             "file_id": file_id,
             "created_by": user.id if user else None
         }
-        
+
         # Update all docs with the file metadata
         for doc in docs:
             doc.metadata.update(file_metadata)
-            log.info(f"Document metadata before saving: {doc.metadata}")  # Debug log
-        
+            # Debug log
+            log.info(f"Document metadata before saving: {doc.metadata}")
+
         # Save to ChromaDB
         save_docs_to_vector_db(docs, collection_name, overwrite=True)
 
@@ -1267,7 +1323,8 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
                 app.state.config.RAG_WEB_SEARCH_DOMAIN_FILTER_LIST,
             )
         else:
-            raise Exception("No SEARXNG_QUERY_URL found in environment variables")
+            raise Exception(
+                "No SEARXNG_QUERY_URL found in environment variables")
     elif engine == "google_pse":
         if (
             app.state.config.GOOGLE_PSE_API_KEY
@@ -1293,7 +1350,8 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
                 app.state.config.RAG_WEB_SEARCH_DOMAIN_FILTER_LIST,
             )
         else:
-            raise Exception("No BRAVE_SEARCH_API_KEY found in environment variables")
+            raise Exception(
+                "No BRAVE_SEARCH_API_KEY found in environment variables")
     elif engine == "kagi":
         if app.state.config.KAGI_SEARCH_API_KEY:
             return search_kagi(
@@ -1303,7 +1361,8 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
                 app.state.config.RAG_WEB_SEARCH_DOMAIN_FILTER_LIST,
             )
         else:
-            raise Exception("No KAGI_SEARCH_API_KEY found in environment variables")
+            raise Exception(
+                "No KAGI_SEARCH_API_KEY found in environment variables")
     elif engine == "mojeek":
         if app.state.config.MOJEEK_SEARCH_API_KEY:
             return search_mojeek(
@@ -1313,7 +1372,8 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
                 app.state.config.RAG_WEB_SEARCH_DOMAIN_FILTER_LIST,
             )
         else:
-            raise Exception("No MOJEEK_SEARCH_API_KEY found in environment variables")
+            raise Exception(
+                "No MOJEEK_SEARCH_API_KEY found in environment variables")
     elif engine == "serpstack":
         if app.state.config.SERPSTACK_API_KEY:
             return search_serpstack(
@@ -1324,7 +1384,8 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
                 https_enabled=app.state.config.SERPSTACK_HTTPS,
             )
         else:
-            raise Exception("No SERPSTACK_API_KEY found in environment variables")
+            raise Exception(
+                "No SERPSTACK_API_KEY found in environment variables")
     elif engine == "serper":
         if app.state.config.SERPER_API_KEY:
             return search_serper(
@@ -1370,7 +1431,8 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
                 app.state.config.RAG_WEB_SEARCH_DOMAIN_FILTER_LIST,
             )
         else:
-            raise Exception("No SEARCHAPI_API_KEY found in environment variables")
+            raise Exception(
+                "No SEARCHAPI_API_KEY found in environment variables")
     elif engine == "jina":
         return search_jina(
             app.state.config.JINA_API_KEY,
@@ -1387,7 +1449,8 @@ def search_web(engine: str, query: str) -> list[SearchResult]:
             app.state.config.RAG_WEB_SEARCH_DOMAIN_FILTER_LIST,
         )
     else:
-        raise Exception("No search engine API key found in environment variables")
+        raise Exception(
+            "No search engine API key found in environment variables")
 
 
 @app.post("/process/web/search")
