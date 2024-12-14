@@ -849,7 +849,7 @@ def save_docs_to_vector_db(
                 
                 doc.metadata.update({
                     "start_time": start_time,
-                    "timestamp_url": f"{doc.metadata['source_url']}?t={int(start_time)}"
+                    "source_url": f"{doc.metadata['source_url']}?t={int(start_time)}"
                 })
                 
                 # Remove the timestamp_map from individual chunks
