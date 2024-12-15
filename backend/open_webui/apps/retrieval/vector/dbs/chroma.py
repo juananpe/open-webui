@@ -17,6 +17,10 @@ from open_webui.config import (
     CHROMA_CLIENT_AUTH_CREDENTIALS,
 )
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 class ChromaClient:
     def __init__(self):
@@ -69,6 +73,8 @@ class ChromaClient:
                     query_embeddings=vectors,
                     n_results=limit,
                 )
+
+                log.info(f"Raw ChromaDB response: {result}")
 
                 return SearchResult(
                     **{
