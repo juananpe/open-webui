@@ -41,12 +41,6 @@
 		return distances.every((d) => d !== undefined && d >= -1 && d <= 1);
 	}
 
-	function formatTime(seconds: number): string {
-		const minutes = Math.floor(seconds / 60);
-		const remainingSeconds = Math.floor(seconds % 60);
-		return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-	}
-
 	function handleCitationClick(citation: any, e: MouseEvent) {
 		if (citation.source?.url?.includes('youtube.com')) {
 			e.preventDefault();
@@ -75,11 +69,6 @@
 				if (metadata?.source_url) {
 					let url = metadata.source_url;
 					let name = metadata.title || metadata.source_url;
-					
-					// If it's a YouTube video with a timestamp
-					if (metadata.type === 'youtube' && metadata.start_time) {
-						name = `${name} (${formatTime(metadata.start_time)})`;
-					}
 					
 					_source = { 
 						..._source, 
