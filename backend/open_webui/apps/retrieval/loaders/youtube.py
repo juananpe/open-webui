@@ -138,9 +138,17 @@ class YoutubeLoader:
             return []
 
         try:
+            # First try to get transcript in requested language
             transcript = transcript_list.find_transcript(self.language)
         except NoTranscriptFound:
-            transcript = transcript_list.find_transcript(["en"])
+            # Fallback: try to get any available transcript
+            available_transcripts = list(transcript_list._generated_transcripts.values())
+            if available_transcripts:
+                transcript = available_transcripts[0]
+                log.info(f"Using first available transcript in language: {transcript.language_code}")
+            else:
+                log.error("No transcripts found for video")
+                return []
 
         transcript_pieces: List[Dict[str, Any]] = transcript.fetch()
 
