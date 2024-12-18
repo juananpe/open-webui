@@ -238,6 +238,7 @@ async def update_knowledge_by_id(
 
 class KnowledgeFileIdForm(BaseModel):
     file_id: str
+    type: Optional[str] = "file"
 
 
 @router.post("/{id}/file/add", response_model=Optional[KnowledgeFilesResponse])
@@ -274,7 +275,11 @@ def add_file_to_knowledge_by_id(
 
     # Add content to the vector database
     try:
-        process_file(ProcessFileForm(file_id=form_data.file_id, collection_name=id))
+        process_file(ProcessFileForm(
+            file_id=form_data.file_id, 
+            collection_name=id,
+            type=form_data.type
+        ))
     except Exception as e:
         log.debug(e)
         raise HTTPException(

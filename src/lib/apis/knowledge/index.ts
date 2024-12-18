@@ -177,7 +177,7 @@ export const updateKnowledgeById = async (token: string, id: string, form: Knowl
 	return res;
 };
 
-export const addFileToKnowledgeById = async (token: string, id: string, fileId: string) => {
+export const addFileToKnowledgeById = async (token: string, id: string, fileId: string, type: string = 'file') => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/knowledge/${id}/file/add`, {
@@ -188,7 +188,8 @@ export const addFileToKnowledgeById = async (token: string, id: string, fileId: 
 			authorization: `Bearer ${token}`
 		},
 		body: JSON.stringify({
-			file_id: fileId
+			file_id: fileId,
+			type: type
 		})
 	})
 		.then(async (res) => {

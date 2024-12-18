@@ -33,6 +33,7 @@
 	import AddContentMenu from './KnowledgeBase/AddContentMenu.svelte';
 	import AddTextContentModal from './KnowledgeBase/AddTextContentModal.svelte';
 	import AddYoutubeModal from './KnowledgeBase/AddYoutubeModal.svelte';
+	import AddUrlModal from './KnowledgeBase/AddUrlModal.svelte';
 
 	import SyncConfirmDialog from '../../common/ConfirmDialog.svelte';
 	import RichTextInput from '$lib/components/common/RichTextInput.svelte';
@@ -66,6 +67,7 @@
 	let showSyncConfirmModal = false;
 	let showAccessControlModal = false;
 	let showAddYoutubeModal = false;
+	let showAddUrlModal = false;
 
 	let inputFiles = null;
 
@@ -104,20 +106,27 @@
 	let mediaQuery;
 	let dragged = false;
 
+	const processUrlContent = (url) => {
+		// Generate placeholder text for URL
+		const placeholderText = `URL: ${url}\nPlaceholder content for URL. This URL requires authentication and its content will be processed in a future implementation.`;
+		return placeholderText;
+	};
+
 	const createFileFromText = (name, content) => {
 		const blob = new Blob([content], { type: 'text/plain' });
-		const file = blobToFile(blob, `${name}.txt`);
+		// Keep the original URL as both the file name and display name
+		const file = blobToFile(blob, name);
 
 		console.log(file);
 		return file;
 	};
 
-	const uploadFileHandler = async (file) => {
+	const uploadFileHandler = async (file, type = 'file') => {
 		console.log(file);
 
 		const tempItemId = uuidv4();
 		const fileItem = {
-			type: 'file',
+			type: type,
 			file: '',
 			id: null,
 			url: '',
@@ -166,7 +175,7 @@
 					delete item.itemId;
 					return item;
 				});
-				await addFileHandler(uploadedFile.id);
+				await addFileHandler(uploadedFile.id, type);
 			} else {
 				toast.error($i18n.t('Failed to upload file.'));
 			}
@@ -356,8 +365,8 @@
 		}
 	};
 
-	const addFileHandler = async (fileId) => {
-		const updatedKnowledge = await addFileToKnowledgeById(localStorage.token, id, fileId).catch(
+	const addFileHandler = async (fileId, type = 'file') => {
+		const updatedKnowledge = await addFileToKnowledgeById(localStorage.token, id, fileId, type).catch(
 			(e) => {
 				toast.error(e);
 				return null;
@@ -582,7 +591,7 @@
 	bind:show={showAddTextContentModal}
 	on:submit={(e) => {
 		const file = createFileFromText(e.detail.name, e.detail.content);
-		uploadFileHandler(file);
+		uploadFileHandler(file, 'text');
 	}}
 />
 
@@ -633,6 +642,57 @@
 	}}
 />
 
+<AddUrlModal
+	bind:show={showAddUrlModal}
+	on:submit={async (e) => {
+		const url = e.detail.url;
+		
+		// Create a temporary file entry
+		const tempItemId = uuidv4();
+		const fileItem = {
+			type: 'url',
+			file: '',
+			id: null,
+			url: url,
+			name: url,
+			size: 0,
+			status: 'uploading',
+			error: '',
+			itemId: tempItemId
+		};
+		
+		knowledge.files = [...(knowledge.files ?? []), fileItem];
+
+		try {
+			// Generate placeholder content
+			const content = processUrlContent(url);
+			const file = createFileFromText(url.replace(/^https?:\/\//, ''), content);
+			
+			// Upload the file
+			const uploadedFile = await uploadFile(localStorage.token, file).catch((e) => {
+				toast.error(e);
+				return null;
+			});
+
+			if (uploadedFile) {
+				knowledge.files = knowledge.files.map((item) => {
+					if (item.itemId === tempItemId) {
+						item.id = uploadedFile.id;
+					}
+					delete item.itemId;
+					return item;
+				});
+				await addFileHandler(uploadedFile.id, 'url');
+			} else {
+				toast.error($i18n.t('Failed to upload URL content.'));
+				knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
+			}
+		} catch (e) {
+			toast.error(e);
+			knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
+		}
+	}}
+/>
 
 <input
 	id="files-input"
@@ -763,6 +823,8 @@
 													showAddTextContentModal = true;
 												} else if (e.detail.type === 'youtube') {
 													showAddYoutubeModal = true;
+												} else if (e.detail.type === 'url') {
+													showAddUrlModal = true;
 												} else {
 													document.getElementById('files-input').click();
 												}

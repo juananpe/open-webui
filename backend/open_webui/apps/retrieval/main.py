@@ -977,6 +977,7 @@ class ProcessFileForm(BaseModel):
     file_id: str
     content: Optional[str] = None
     collection_name: Optional[str] = None
+    type: Optional[str] = "file"  # Default to 'file' if not specified
 
 
 @app.post("/process/file")
@@ -991,6 +992,9 @@ def process_file(
 
         if collection_name is None:
             collection_name = f"file-{file.id}"
+
+        # Get the document type, default to 'file' if not specified
+        doc_type = form_data.type if form_data.type else "file"
 
         if form_data.content:
             # Update the content in the file
@@ -1008,6 +1012,7 @@ def process_file(
                         "created_by": file.user_id,
                         "file_id": file.id,
                         "source": file.filename,
+                        "type": doc_type,  # Add document type to metadata
                     },
                 )
             ]
@@ -1025,7 +1030,10 @@ def process_file(
                 docs = [
                     Document(
                         page_content=result.documents[0][idx],
-                        metadata=result.metadatas[0][idx],
+                        metadata={
+                            **result.metadatas[0][idx],
+                            "type": doc_type,  # Add document type to metadata
+                        },
                     )
                     for idx, id in enumerate(result.ids[0])
                 ]
@@ -1039,6 +1047,7 @@ def process_file(
                             "created_by": file.user_id,
                             "file_id": file.id,
                             "source": file.filename,
+                            "type": doc_type,  # Add document type to metadata
                         },
                     )
                 ]
@@ -1068,6 +1077,7 @@ def process_file(
                             "created_by": file.user_id,
                             "file_id": file.id,
                             "source": file.filename,
+                            "type": doc_type,  # Add document type to metadata
                         },
                     )
                     for doc in docs
@@ -1082,6 +1092,7 @@ def process_file(
                             "created_by": file.user_id,
                             "file_id": file.id,
                             "source": file.filename,
+                            "type": doc_type,  # Add document type to metadata
                         },
                     )
                 ]
