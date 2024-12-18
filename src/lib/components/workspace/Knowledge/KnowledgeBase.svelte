@@ -121,7 +121,7 @@
 		return file;
 	};
 
-	const uploadFileHandler = async (file, type = 'file') => {
+	const uploadFileHandler = async (file, type = 'file', url = null) => {
 		console.log(file);
 
 		const tempItemId = uuidv4();
@@ -129,7 +129,7 @@
 			type: type,
 			file: '',
 			id: null,
-			url: '',
+			url: url || '',
 			name: file.name,
 			size: file.size,
 			status: 'uploading',
@@ -175,7 +175,7 @@
 					delete item.itemId;
 					return item;
 				});
-				await addFileHandler(uploadedFile.id, type);
+				await addFileHandler(uploadedFile.id, type, url);
 			} else {
 				toast.error($i18n.t('Failed to upload file.'));
 			}
@@ -365,8 +365,8 @@
 		}
 	};
 
-	const addFileHandler = async (fileId, type = 'file') => {
-		const updatedKnowledge = await addFileToKnowledgeById(localStorage.token, id, fileId, type).catch(
+	const addFileHandler = async (fileId, type = 'file', url = null) => {
+		const updatedKnowledge = await addFileToKnowledgeById(localStorage.token, id, fileId, type, url).catch(
 			(e) => {
 				toast.error(e);
 				return null;
@@ -682,7 +682,7 @@
 					delete item.itemId;
 					return item;
 				});
-				await addFileHandler(uploadedFile.id, 'url');
+				await addFileHandler(uploadedFile.id, 'url', url);
 			} else {
 				toast.error($i18n.t('Failed to upload URL content.'));
 				knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);

@@ -42,7 +42,7 @@
 	}
 
 	function handleCitationClick(citation: any, e: MouseEvent) {
-		if (citation.source?.url?.includes('youtube.com')) {
+		if (citation.source?.url?.includes('youtube.com') || citation.metadata?.[0]?.type === 'url') {
 			e.preventDefault();
 			window.open(citation.source.url, '_blank');
 			return;
@@ -60,6 +60,8 @@
 			source.document.forEach((document, index) => {
 				const metadata = source.metadata?.[index];
 				const distance = source.distances?.[index];
+
+				console.log("metadata",	 metadata);
 
 				// Within the same citation there could be multiple documents
 				const id = metadata?.source ?? 'N/A';
