@@ -117,12 +117,10 @@
 		// Keep the original URL as both the file name and display name
 		const file = blobToFile(blob, name);
 
-		console.log(file);
 		return file;
 	};
 
 	const uploadFileHandler = async (file, type = 'file', url = null) => {
-		console.log(file);
 
 		const tempItemId = uuidv4();
 		const fileItem = {
@@ -130,7 +128,7 @@
 			file: '',
 			id: null,
 			url: url || '',
-			name: file.name,
+			name: type === 'url' ? url : file.name,
 			size: file.size,
 			status: 'uploading',
 			error: '',
@@ -152,7 +150,6 @@
 			});
 
 			if (res) {
-				console.log(res);
 				const blob = new Blob([res.text], { type: 'text/plain' });
 				file = blobToFile(blob, `${file.name}.txt`);
 			}
@@ -165,7 +162,6 @@
 			});
 
 			if (uploadedFile) {
-				console.log(uploadedFile);
 				knowledge.files = knowledge.files.map((item) => {
 					if (item.itemId === tempItemId) {
 						item.id = uploadedFile.id;
@@ -420,7 +416,6 @@
 	};
 
 	const changeDebounceHandler = () => {
-		console.log('debounce');
 		if (debounceTimeout) {
 			clearTimeout(debounceTimeout);
 		}
@@ -486,6 +481,29 @@
 					toast.error($i18n.t(`File not found.`));
 				}
 			}
+		}
+	};
+
+	const extractTitleFromUrl = (url) => {
+		try {
+			const urlObj = new URL(url);
+			// Remove common TLDs and prefixes
+			let hostname = urlObj.hostname.replace(/^www\./, '').replace(/\.(com|org|net|io|edu)$/, '');
+			
+			// Get the last meaningful path segment, if it exists
+			let pathSegment = urlObj.pathname.split('/').filter(Boolean).pop() || '';
+			
+			// If we have a path segment, combine it with hostname
+			if (pathSegment) {
+				return `${hostname} - ${pathSegment}`;
+			}
+			
+			// If no path segment, just use the hostname
+			return hostname;
+		} catch (e) {
+			// If URL parsing fails, return the original URL
+			console.error('Error parsing URL:', e);
+			return url;
 		}
 	};
 
@@ -666,7 +684,8 @@
 		try {
 			// Generate placeholder content
 			const content = processUrlContent(url);
-			const file = createFileFromText(url.replace(/^https?:\/\//, ''), content);
+			const title = extractTitleFromUrl(url);
+			const file = createFileFromText(title, content);
 			
 			// Upload the file
 			const uploadedFile = await uploadFile(localStorage.token, file).catch((e) => {
@@ -688,6 +707,7 @@
 				knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
 			}
 		} catch (e) {
+			console.error('7. Error in URL processing:', e);
 			toast.error(e);
 			knowledge.files = knowledge.files.filter(f => f.itemId !== tempItemId);
 		}
