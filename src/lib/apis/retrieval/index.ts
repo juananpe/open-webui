@@ -343,20 +343,21 @@ export const processFile = async (
 	return res;
 };
 
-export const processYoutubeVideo = async (token: string, url: string) => {
+export const processYoutubeVideo = async (token: string, url: string, collectionName: string) => {
 	let error = null;
 
 	const res = await fetch(`${RETRIEVAL_API_BASE_URL}/process/youtube`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			authorization: `Bearer ${token}`
-		},
-		body: JSON.stringify({
-			url: url
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				authorization: `Bearer ${token}`
+			},
+			body: JSON.stringify({
+				url: url,
+				collection_name: collectionName
+			})
 		})
-	})
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
 			return res.json();

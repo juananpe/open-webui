@@ -634,8 +634,8 @@
 		
 		knowledge.files = [...(knowledge.files ?? []), fileItem];
 
-		// Process the YouTube video
-		const res = await processYoutubeVideo(localStorage.token, url).catch((err) => {
+		// Process the YouTube video with knowledge base ID as collection
+		const res = await processYoutubeVideo(localStorage.token, url, id).catch((err) => {
 			toast.error(err);
 			return null;
 		});

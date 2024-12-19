@@ -982,176 +982,79 @@ class ProcessFileForm(BaseModel):
 
 
 @app.post("/process/file")
-def process_file(
-    form_data: ProcessFileForm,
-    user=Depends(get_verified_user),
-):
+def process_file(form_data: ProcessFileForm, user=Depends(get_verified_user)):
     try:
-        file = Files.get_file_by_id(form_data.file_id)
-
+        log.info(f"Processing file with form_data: {form_data}")
+        
         collection_name = form_data.collection_name
+        if not collection_name:
+            collection_name = calculate_sha256_string(form_data.file_id)[:63]
+        log.info(f"Collection name: {collection_name}")
 
-        if collection_name is None:
-            collection_name = f"file-{file.id}"
-
-        # Get the document type, default to 'file' if not specified
-        doc_type = form_data.type if form_data.type else "file"
-
-        # Get source URL if available
-        source = form_data.url if form_data.url else file.filename
-
-        if form_data.content:
-            # Update the content in the file
-            # Usage: /files/{file_id}/data/content/update
-
-            VECTOR_DB_CLIENT.delete_collection(
-                collection_name=f"file-{file.id}")
-
-            docs = [
-                Document(
-                    page_content=form_data.content.replace("<br/>", "\n"),
-                    metadata={
-                        **file.meta,
-                        "name": file.filename,
-                        "created_by": file.user_id,
-                        "file_id": file.id,
-                        "source": source,
-                        "type": doc_type,
-                    },
-                )
-            ]
-
-            text_content = form_data.content
-        elif form_data.collection_name:
-            # Check if the file has already been processed and save the content
-            # Usage: /knowledge/{id}/file/add, /knowledge/{id}/file/update
-
-            result = VECTOR_DB_CLIENT.query(
-                collection_name=f"file-{file.id}", filter={"file_id": file.id}
+        log.info(f"Looking up file with ID: {form_data.file_id}")
+        file = Files.get_file_by_id(form_data.file_id)
+        if not file:
+            log.error(f"File not found with ID: {form_data.file_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ERROR_MESSAGES.NOT_FOUND,
             )
 
-            if result is not None and len(result.ids[0]) > 0:
-                docs = [
-                    Document(
-                        page_content=result.documents[0][idx],
-                        metadata={
-                            **result.metadatas[0][idx],
-                            "type": doc_type,
-                            "source": source,
-                        },
-                    )
-                    for idx, id in enumerate(result.ids[0])
-                ]
-            else:
-                docs = [
-                    Document(
-                        page_content=file.data.get("content", ""),
-                        metadata={
-                            **file.meta,
-                            "name": file.filename,
-                            "created_by": file.user_id,
-                            "file_id": file.id,
-                            "source": source,
-                            "type": doc_type,
-                        },
-                    )
-                ]
+        log.info(f"Found file: {file}")
+        content = file.data.get("content", "")
+        
+        # Create base metadata
+        metadata = {
+            **file.meta,  # Original file metadata
+            "name": file.filename,
+            "created_by": file.user_id,
+            "file_id": file.id,
+            "source": file.filename,
+        }
+        log.info(f"Created metadata: {metadata}")
 
-            text_content = file.data.get("content", "")
-        else:
-            # Process the file and save the content
-            # Usage: /files/
-            file_path = file.path
-            if file_path:
-                file_path = Storage.get_file(file_path)
-                loader = Loader(
-                    engine=app.state.config.CONTENT_EXTRACTION_ENGINE,
-                    TIKA_SERVER_URL=app.state.config.TIKA_SERVER_URL,
-                    PDF_EXTRACT_IMAGES=app.state.config.PDF_EXTRACT_IMAGES,
-                )
-                docs = loader.load(
-                    file.filename, file.meta.get("content_type"), file_path
-                )
+        # For YouTube content, we skip embedding but still process the file association
+        if form_data.type == "youtube":
+            log.info("Processing YouTube content - skipping embedding")
+            return {
+                "status": True,
+                "collection_name": collection_name,
+                "content": content,
+                "file": {
+                    "id": file.id,
+                    "meta": metadata
+                }
+            }
 
-                docs = [
-                    Document(
-                        page_content=doc.page_content,
-                        metadata={
-                            **doc.metadata,
-                            "name": file.filename,
-                            "created_by": file.user_id,
-                            "file_id": file.id,
-                            "source": source,
-                            "type": doc_type,
-                        },
-                    )
-                    for doc in docs
-                ]
-            else:
-                docs = [
-                    Document(
-                        page_content=file.data.get("content", ""),
-                        metadata={
-                            **file.meta,
-                            "name": file.filename,
-                            "created_by": file.user_id,
-                            "file_id": file.id,
-                            "source": source,
-                            "type": doc_type,
-                        },
-                    )
-                ]
-            text_content = " ".join([doc.page_content for doc in docs])
-
-        log.debug(f"text_content: {text_content}")
-        Files.update_file_data_by_id(
-            file.id,
-            {"content": text_content},
+        # Regular file processing continues here...
+        log.info("Processing regular file content")
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=app.state.config.CHUNK_SIZE,
+            chunk_overlap=app.state.config.CHUNK_OVERLAP,
+        )
+        
+        docs = text_splitter.create_documents(
+            texts=[content],
+            metadatas=[metadata]
         )
 
-        hash = calculate_sha256_string(text_content)
-        Files.update_file_hash_by_id(file.id, hash)
-
-        try:
-            result = save_docs_to_vector_db(
-                docs=docs,
-                collection_name=collection_name,
-                metadata={
-                    "file_id": file.id,
-                    "name": file.filename,
-                    "hash": hash,
-                },
-                add=(True if form_data.collection_name else False),
-            )
-
-            if result:
-                Files.update_file_metadata_by_id(
-                    file.id,
-                    {
-                        "collection_name": collection_name,
-                    },
-                )
-
-                return {
-                    "status": True,
-                    "collection_name": collection_name,
-                    "filename": file.filename,
-                    "content": text_content,
-                }
-        except Exception as e:
-            raise e
+        save_docs_to_vector_db(docs, collection_name)
+        
+        return {
+            "status": True,
+            "collection_name": collection_name,
+            "content": content,
+            "file": {
+                "id": file.id,
+                "meta": metadata
+            }
+        }
     except Exception as e:
-        log.exception(e)
-        if "No pandoc was found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.PANDOC_NOT_INSTALLED,
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e),
-            )
+        log.exception(f"Error processing file: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.DEFAULT(e),
+        )
 
 
 class ProcessTextForm(BaseModel):
@@ -1196,11 +1099,15 @@ def process_text(
 @app.post("/process/youtube")
 def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_user)):
     try:
+        # Use the provided collection_name or generate one from URL
         collection_name = form_data.collection_name
         if not collection_name:
             collection_name = calculate_sha256_string(form_data.url)[:63]
+            log.info(f"No collection name provided, generated: {collection_name}")
+        else:
+            log.info(f"Using provided collection name: {collection_name}")
 
-        log.info(f"Processing YouTube video: {form_data.url}")  # Debug log
+        log.info(f"Processing YouTube video: {form_data.url}")
 
         loader = YoutubeLoader(
             form_data.url,
@@ -1213,22 +1120,17 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
             raise ValueError("No transcript found for this video")
 
         content = " ".join([doc.page_content for doc in docs])
-        log.debug(f"text_content: {content}")
-
-        # Get video title from metadata or fallback to URL
         video_title = docs[0].metadata.get("title", form_data.url)
-
-        # Create a unique file ID for this video
         file_id = str(uuid.uuid4())
 
-        # Create a file record
+        # Create file record
         file_item = Files.insert_new_file(
             user.id if user else None,
             FileForm(
                 **{
                     "id": file_id,
                     "filename": video_title,
-                    "path": form_data.url,  # Use the video URL as the path
+                    "path": form_data.url,
                     "meta": {
                         "name": video_title,
                         "content_type": "text/plain",
@@ -1244,7 +1146,7 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
             ),
         )
 
-        # Add file-specific metadata
+        # Create metadata for ChromaDB
         file_metadata = {
             "source": form_data.url,
             "source_url": add_timestamp_to_youtube_url(form_data.url, 0),
@@ -1252,22 +1154,23 @@ def process_youtube_video(form_data: ProcessUrlForm, user=Depends(get_verified_u
             "type": "youtube",
             "name": video_title,
             "file_id": file_id,
-            "created_by": user.id if user else None
+            "created_by": user.id if user else None,
+            "content_type": "text/plain",
+            "size": len(content)
         }
 
-        # Update all docs with the file metadata
+        # Update docs with metadata and save to ChromaDB
         for doc in docs:
             doc.metadata.update(file_metadata)
-            # Debug log
             log.info(f"Document metadata before saving: {doc.metadata}")
 
-        # Save to ChromaDB
+        # Save to the specified collection
         save_docs_to_vector_db(docs, collection_name, overwrite=True)
 
         return {
             "status": True,
             "collection_name": collection_name,
-            "id": file_id,  # Return the file ID directly
+            "id": file_id,
             "filename": video_title,
             "file": {
                 "data": {
