@@ -13,12 +13,11 @@ from open_webui.apps.webui.models.knowledge import (
 from open_webui.apps.webui.models.files import Files, FileModel
 from open_webui.apps.retrieval.vector.connector import VECTOR_DB_CLIENT
 from open_webui.apps.retrieval.main import process_file, ProcessFileForm
-
+from open_webui.apps.webui.routers.files import delete_file_by_id
 
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_access, has_permission
-
 
 from open_webui.env import SRC_LOG_LEVELS
 
@@ -40,7 +39,8 @@ async def get_knowledge(user=Depends(get_verified_user)):
     if user.role == "admin":
         knowledge_bases = Knowledges.get_knowledge_bases()
     else:
-        knowledge_bases = Knowledges.get_knowledge_bases_by_user_id(user.id, "read")
+        knowledge_bases = Knowledges.get_knowledge_bases_by_user_id(
+            user.id, "read")
 
     # Get files for each knowledge base
     knowledge_with_files = []
@@ -88,7 +88,8 @@ async def get_knowledge_list(user=Depends(get_verified_user)):
     if user.role == "admin":
         knowledge_bases = Knowledges.get_knowledge_bases()
     else:
-        knowledge_bases = Knowledges.get_knowledge_bases_by_user_id(user.id, "write")
+        knowledge_bases = Knowledges.get_knowledge_bases_by_user_id(
+            user.id, "write")
 
     # Get files for each knowledge base
     knowledge_with_files = []
@@ -177,7 +178,8 @@ async def get_knowledge_by_id(id: str, user=Depends(get_verified_user)):
             or has_access(user.id, "read", knowledge.access_control)
         ):
 
-            file_ids = knowledge.data.get("file_ids", []) if knowledge.data else []
+            file_ids = knowledge.data.get(
+                "file_ids", []) if knowledge.data else []
             files = Files.get_files_by_ids(file_ids)
 
             return KnowledgeFilesResponse(
@@ -277,7 +279,7 @@ def add_file_to_knowledge_by_id(
     # Add content to the vector database
     try:
         process_file(ProcessFileForm(
-            file_id=form_data.file_id, 
+            file_id=form_data.file_id,
             collection_name=id,
             type=form_data.type,
             url=form_data.url
@@ -297,7 +299,8 @@ def add_file_to_knowledge_by_id(
             file_ids.append(form_data.file_id)
             data["file_ids"] = file_ids
 
-            knowledge = Knowledges.update_knowledge_data_by_id(id=id, data=data)
+            knowledge = Knowledges.update_knowledge_data_by_id(
+                id=id, data=data)
 
             if knowledge:
                 files = Files.get_files_by_ids(file_ids)
@@ -356,7 +359,8 @@ def update_file_from_knowledge_by_id(
 
     # Add content to the vector database
     try:
-        process_file(ProcessFileForm(file_id=form_data.file_id, collection_name=id))
+        process_file(ProcessFileForm(
+            file_id=form_data.file_id, collection_name=id))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -386,7 +390,7 @@ def update_file_from_knowledge_by_id(
 
 
 @router.post("/{id}/file/remove", response_model=Optional[KnowledgeFilesResponse])
-def remove_file_from_knowledge_by_id(
+async def remove_file_from_knowledge_by_id(
     id: str,
     form_data: KnowledgeFileIdForm,
     user=Depends(get_verified_user),
@@ -416,12 +420,8 @@ def remove_file_from_knowledge_by_id(
         collection_name=knowledge.id, filter={"file_id": form_data.file_id}
     )
 
-    result = VECTOR_DB_CLIENT.query(
-        collection_name=knowledge.id,
-        filter={"file_id": form_data.file_id},
-    )
-
-    Files.delete_file_by_id(form_data.file_id)
+    # Delete file (handles both database and physical file)
+    await delete_file_by_id(form_data.file_id, user)
 
     if knowledge:
         data = knowledge.data or {}
@@ -431,7 +431,8 @@ def remove_file_from_knowledge_by_id(
             file_ids.remove(form_data.file_id)
             data["file_ids"] = file_ids
 
-            knowledge = Knowledges.update_knowledge_data_by_id(id=id, data=data)
+            knowledge = Knowledges.update_knowledge_data_by_id(
+                id=id, data=data)
 
             if knowledge:
                 files = Files.get_files_by_ids(file_ids)
@@ -512,6 +513,7 @@ async def reset_knowledge_by_id(id: str, user=Depends(get_verified_user)):
         log.debug(e)
         pass
 
-    knowledge = Knowledges.update_knowledge_data_by_id(id=id, data={"file_ids": []})
+    knowledge = Knowledges.update_knowledge_data_by_id(
+        id=id, data={"file_ids": []})
 
     return knowledge
