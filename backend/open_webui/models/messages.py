@@ -189,9 +189,11 @@ class MessageTable:
                 .all()
             )
 
-            return [
-                MessageModel.model_validate(message) for message in all_messages
-            ] + [MessageModel.model_validate(message)]
+            # If length of all_messages is less than limit, then add the parent message
+            if len(all_messages) < limit:
+                all_messages.append(message)
+
+            return [MessageModel.model_validate(message) for message in all_messages]
 
     def update_message_by_id(
         self, id: str, form_data: MessageForm
@@ -248,6 +250,18 @@ class MessageTable:
             db.query(MessageReaction).filter_by(
                 message_id=id, user_id=user_id, name=name
             ).delete()
+            db.commit()
+            return True
+
+    def delete_reactions_by_id(self, id: str) -> bool:
+        with get_db() as db:
+            db.query(MessageReaction).filter_by(message_id=id).delete()
+            db.commit()
+            return True
+
+    def delete_replies_by_id(self, id: str) -> bool:
+        with get_db() as db:
+            db.query(Message).filter_by(parent_id=id).delete()
             db.commit()
             return True
 
