@@ -30,7 +30,7 @@ from open_webui.env import (
     SRC_LOG_LEVELS,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response, HTMLResponse
 from open_webui.config import (
     OPENID_PROVIDER_URL,
     ENABLE_OAUTH_SIGNUP,
