@@ -15,6 +15,7 @@ from open_webui.apps.retrieval.vector.connector import VECTOR_DB_CLIENT
 from open_webui.apps.retrieval.main import process_file, ProcessFileForm
 from open_webui.apps.webui.routers.files import delete_file_by_id
 
+from open_webui.storage.provider import Storage
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_access, has_permission
@@ -421,6 +422,11 @@ async def remove_file_from_knowledge_by_id(
         collection_name=knowledge.id, filter={"file_id": form_data.file_id}
     )
 
+    # Remove the file's collection from vector database
+    file_collection = f"file-{form_data.file_id}"
+    if VECTOR_DB_CLIENT.has_collection(collection_name=file_collection):
+        VECTOR_DB_CLIENT.delete_collection(collection_name=file_collection)
+        
     # Delete file (handles both database and physical file)
     await delete_file_by_id(form_data.file_id, user)
 
